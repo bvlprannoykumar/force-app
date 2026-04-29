@@ -51,10 +51,10 @@ export function Sub({ children, style = {} }) {
   return (
     <div style={{
       fontFamily: "'Barlow Condensed', sans-serif",
-      fontSize: 16,
-      fontWeight: 400,
-      color: '#777',
-      lineHeight: 1.5,
+      fontSize: 17,
+      fontWeight: 500,
+      color: '#999',
+      lineHeight: 1.55,
       ...style
     }}>
       {children}
@@ -82,7 +82,7 @@ export function Dim({ children, style = {} }) {
     <div style={{
       fontFamily: "'Barlow Condensed', sans-serif",
       fontSize: 14,
-      color: '#555',
+      color: '#707070',
       letterSpacing: 1,
       ...style
     }}>
@@ -231,17 +231,18 @@ export function Section({ label, children, accent = false }) {
         fontSize: 11,
         fontWeight: 700,
         letterSpacing: 3,
-        color: accent ? '#E8FF00' : '#444',
+        color: accent ? '#E8FF00' : '#555',
         marginBottom: 10
       }}>
         {label}
       </div>
       <div style={{
         fontFamily: "'Courier Prime', monospace",
-        fontSize: 15,
-        color: '#d0d0d0',
-        lineHeight: 1.7,
-        borderLeft: `2px solid ${accent ? '#E8FF00' : '#1e1e1e'}`,
+        fontSize: 16,
+        fontWeight: 700,
+        color: '#e8e8e8',
+        lineHeight: 1.75,
+        borderLeft: `2px solid ${accent ? '#E8FF00' : '#2a2a2a'}`,
         paddingLeft: 14
       }}>
         {children}
