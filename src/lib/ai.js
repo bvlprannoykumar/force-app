@@ -11,53 +11,118 @@ You are NOT a coach. You are an execution system.`
 
 // ─── Provider Calls ───────────────────────────────────────────────────────────
 
+// Gemini free-tier models in priority order (2026 verified)
+const GEMINI_FREE_MODELS = [
+  'gemini-2.5-flash',       // Most powerful free model, 250 req/day
+  'gemini-2.5-flash-lite',  // High volume fallback, 1000 req/day
+  'gemini-1.5-flash',       // Legacy stable, always available
+]
+
 async function callGemini(apiKey, userPrompt) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ parts: [{ text: userPrompt }] }],
-        generationConfig: { maxOutputTokens: 900, temperature: 0.8 }
-      })
+  let lastError = null
+
+  for (const model of GEMINI_FREE_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+            contents: [{ parts: [{ text: userPrompt }] }],
+            generationConfig: { maxOutputTokens: 900, temperature: 0.8 }
+          })
+        }
+      )
+
+      // Catch HTTP-level failures (402, 403, 429 etc)
+      if (!res.ok) {
+        lastError = new Error(`Gemini model ${model} returned HTTP ${res.status}`)
+        continue
+      }
+
+      const data = await res.json()
+
+      if (data.error) {
+        lastError = new Error(data.error.message || JSON.stringify(data.error))
+        continue
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!text) { lastError = new Error(`Model ${model} returned empty`); continue }
+
+      return text
+    } catch (err) {
+      lastError = err
+      continue
     }
-  )
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  }
+
+  throw lastError || new Error('All Gemini models failed. Check your API key.')
 }
 
+// Groq free models in priority order
+const GROQ_FREE_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama3-70b-8192',
+  'mixtral-8x7b-32768',
+]
+
 async function callGroq(apiKey, userPrompt) {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: 'llama3-70b-8192',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 900,
-      temperature: 0.8
-    })
-  })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.choices?.[0]?.message?.content || ''
+  let lastError = null
+
+  for (const model of GROQ_FREE_MODELS) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 900,
+          temperature: 0.8
+        })
+      })
+
+      if (!res.ok) {
+        lastError = new Error(`Groq model ${model} returned HTTP ${res.status}`)
+        continue
+      }
+
+      const data = await res.json()
+      if (data.error) {
+        lastError = new Error(data.error.message || JSON.stringify(data.error))
+        continue
+      }
+
+      const text = data.choices?.[0]?.message?.content
+      if (!text) { lastError = new Error(`Model ${model} returned empty`); continue }
+
+      return text
+    } catch (err) {
+      lastError = err
+      continue
+    }
+  }
+
+  throw lastError || new Error('All Groq models failed. Check your API key.')
 }
 
 // OpenRouter free models in priority order — auto-fallback if one is down
 const OPENROUTER_FREE_MODELS = [
   'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemma-2-9b-it:free',
   'mistralai/mistral-7b-instruct:free',
-  'google/gemma-3-27b-it:free',
-  'qwen/qwen3-8b:free',
-  'microsoft/phi-4-reasoning-plus:free',
+  'qwen/qwen-2.5-72b-instruct:free',
+  'deepseek/deepseek-r1-zero:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
 ]
 
 async function callOpenRouter(apiKey, userPrompt) {
@@ -82,14 +147,18 @@ async function callOpenRouter(apiKey, userPrompt) {
           max_tokens: 900
         })
       })
+      if (!res.ok) {
+        lastError = new Error(`Model ${model} unavailable (HTTP ${res.status})`)
+        continue
+      }
       const data = await res.json()
-      // Skip this model if it errors, try the next one
       if (data.error) {
         lastError = new Error(data.error.message || JSON.stringify(data.error))
         continue
       }
       const text = data.choices?.[0]?.message?.content
-      if (text) return text
+      if (!text) { lastError = new Error(`Model ${model} returned empty`); continue }
+      return text
     } catch (err) {
       lastError = err
       continue
@@ -121,13 +190,15 @@ async function callAnthropic(apiKey, userPrompt) {
 }
 
 async function callAI(apiKey, provider, userPrompt) {
-  switch (provider) {
-    case 'gemini': return callGemini(apiKey, userPrompt)
-    case 'groq': return callGroq(apiKey, userPrompt)
-    case 'openrouter': return callOpenRouter(apiKey, userPrompt)
-    case 'anthropic': return callAnthropic(apiKey, userPrompt)
-    default: throw new Error('Unknown provider: ' + provider)
-  }
+  return withBackoff(() => {
+    switch (provider) {
+      case 'gemini': return callGemini(apiKey, userPrompt)
+      case 'groq': return callGroq(apiKey, userPrompt)
+      case 'openrouter': return callOpenRouter(apiKey, userPrompt)
+      case 'anthropic': return callAnthropic(apiKey, userPrompt)
+      default: throw new Error('Unknown provider: ' + provider)
+    }
+  })
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -261,5 +332,25 @@ function parseReflection(text) {
     avoidance: g(/AVOIDANCE PATTERN\s*\n(.+?)(?=CORRECTION|$)/s),
     correction: g(/CORRECTION\s*\n(.+?)$/s),
     isStrong
+  }
+}
+
+// ─── Exponential Backoff ──────────────────────────────────────────────────────
+// Defined at bottom to avoid hoisting issues. Retries on 429 only.
+// Non-429 errors thrown immediately so fallback chain handles them.
+async function withBackoff(fn, maxRetries = 3) {
+  let delay = 2000
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const is429 = err.message.includes('429') || err.message.toLowerCase().includes('rate limit')
+      if (is429 && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, delay))
+        delay *= 2
+        continue
+      }
+      throw err
+    }
   }
 }
