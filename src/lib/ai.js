@@ -51,27 +51,52 @@ async function callGroq(apiKey, userPrompt) {
   return data.choices?.[0]?.message?.content || ''
 }
 
+// OpenRouter free models in priority order — auto-fallback if one is down
+const OPENROUTER_FREE_MODELS = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+  'google/gemma-3-27b-it:free',
+  'qwen/qwen3-8b:free',
+  'microsoft/phi-4-reasoning-plus:free',
+]
+
 async function callOpenRouter(apiKey, userPrompt) {
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://force.vercel.app',
-      'X-Title': 'FORCE'
-    },
-    body: JSON.stringify({
-      model: 'meta-llama/llama-3.1-8b-instruct:free',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 900
-    })
-  })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message)
-  return data.choices?.[0]?.message?.content || ''
+  let lastError = null
+
+  for (const model of OPENROUTER_FREE_MODELS) {
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://force.vercel.app',
+          'X-Title': 'FORCE'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: 900
+        })
+      })
+      const data = await res.json()
+      // Skip this model if it errors, try the next one
+      if (data.error) {
+        lastError = new Error(data.error.message || JSON.stringify(data.error))
+        continue
+      }
+      const text = data.choices?.[0]?.message?.content
+      if (text) return text
+    } catch (err) {
+      lastError = err
+      continue
+    }
+  }
+
+  throw lastError || new Error('All OpenRouter free models failed. Try again shortly.')
 }
 
 async function callAnthropic(apiKey, userPrompt) {
