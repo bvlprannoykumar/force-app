@@ -201,36 +201,61 @@ async function callAI(apiKey, provider, userPrompt) {
   })
 }
 
+
+// ─── Stage Map ────────────────────────────────────────────────────────────────
+
+export function getStage(dayNum) {
+  if (dayNum <= 3)  return { label: 'AWARENESS',   desc: 'Notice your avoidance and hesitation patterns' }
+  if (dayNum <= 7)  return { label: 'CONTROL',     desc: 'Slow down, ask better, stop over-explaining' }
+  if (dayNum <= 11) return { label: 'PRESSURE',    desc: 'Hold discomfort, ask direct, tolerate pushback' }
+  if (dayNum <= 14) return { label: 'LEADERSHIP',  desc: 'Guide conversations instead of reacting' }
+  if (dayNum <= 18) return { label: 'CONVICTION',  desc: 'State your value, make clear asks, stop softening' }
+  if (dayNum <= 21) return { label: 'EXECUTION',   desc: 'Combine everything in real conversations' }
+  return              { label: 'OPERATOR',     desc: 'You are the system now' }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function generateMove(apiKey, provider, config) {
-  const { goal, context, confidence_level, day_number, previous_status } = config
+  const { goal, context, confidence_level, day_number, previous_status, real_person, stage, task_number, move_type } = config
 
-  const prompt = `Generate today's execution move for this professional.
+  const personContext = real_person?.name
+    ? `Real Person: ${real_person.name} (${real_person.role || "colleague"})${real_person.about ? " — Context: " + real_person.about : ""}`
+    : "No specific person provided — use their onboarding context to create a realistic scenario"
+
+  const taskLabel = task_number === 2 ? "TASK 2 OF 2" : "TASK 1 OF 2"
+  const moveTypeInstruction = move_type ? `Move Type Requested: ${move_type}` : ""
+
+  const prompt = `Generate ${taskLabel} for this professional's daily execution.
 
 PROFILE:
 Goal: ${goal}
 Context: ${context}
 Confidence Level: ${confidence_level}
 Day Number: ${day_number}
-Yesterday's Status: ${previous_status}
+Stage: ${stage}
+Yesterday\'s Status: ${previous_status}
+${personContext}
+${moveTypeInstruction}
 
 RULES:
-- Confidence LOW: safer environment, still uncomfortable
-- Confidence HIGH: direct confrontation, higher stakes
+- Use the REAL PERSON provided. Do NOT invent fake names or placeholders.
+- If no real person, generate a realistic scenario based on their context.
+- Confidence LOW: uncomfortable but achievable
+- Confidence HIGH: direct confrontation, high stakes
 - Give ONE path only. No options.
-- Constraint must be behavioral (what they CANNOT do)
-- Discomfort trigger must feel slightly scary but doable
+- Constraint must be behavioral. What they CANNOT do.
+- Make it feel immediately doable today.
 
 Respond in EXACTLY this format, nothing else:
 
-TODAY'S MOVE
-Conversation: [specific person and conversation to initiate]
+TODAY\'S MOVE
+Conversation: [exact person and what to say — use the real name if provided]
 Objective: [what this forces]
 Constraint: [what they cannot do during it]
 
 EXECUTION PLAN
-Opening: [exact first line to say]
+Opening: [exact first line to say to this person]
 Question 1: [first question to ask]
 Question 2: [follow-up question]
 
@@ -245,6 +270,38 @@ Win Condition: [the clear, measurable win]`
 
   const raw = await callAI(apiKey, provider, prompt)
   return { ...parseMove(raw), raw }
+}
+
+export async function generateDaySummary(apiKey, provider, data) {
+  const { day_number, stage, task1, task2, reflection1, reflection2 } = data
+
+  const prompt = `Analyze this professional\'s full day of execution.
+
+Day ${day_number} — Stage: ${stage}
+
+TASK 1: ${task1?.conversation || "Not completed"}
+What they reported: ${reflection1 || "No reflection provided"}
+
+TASK 2: ${task2?.conversation || "Not completed"}
+What they reported: ${reflection2 || "No reflection provided"}
+
+Generate a sharp Day Summary. No motivation. No celebration. Be confronting and direct.
+
+Respond in EXACTLY this format:
+
+DAY SUMMARY
+What they did: [summarize both conversations in 2 sentences, factually]
+
+PATTERN: [one behavioral pattern observed across both tasks — name it clearly]
+
+CORRECTION: [one specific thing that must change tomorrow — not generic]
+
+IDENTITY: [one line that names what they proved about themselves today — can be positive or negative]
+
+NEXT: [one line about what tomorrow\'s stage demands — build anticipation, not comfort]`
+
+  const raw = await callAI(apiKey, provider, prompt)
+  return { ...parseDaySummary(raw), raw }
 }
 
 export async function generatePreConversation(apiKey, provider, moveData) {
@@ -352,5 +409,16 @@ async function withBackoff(fn, maxRetries = 3) {
       }
       throw err
     }
+  }
+}
+
+function parseDaySummary(text) {
+  const g = (pattern) => text.match(pattern)?.[1]?.trim() || ''
+  return {
+    whatTheyDid: g(/What they did:\s*(.+?)(?=PATTERN:|$)/s),
+    pattern:     g(/PATTERN:\s*(.+?)(?=CORRECTION:|$)/s),
+    correction:  g(/CORRECTION:\s*(.+?)(?=IDENTITY:|$)/s),
+    identity:    g(/IDENTITY:\s*(.+?)(?=NEXT:|$)/s),
+    next:        g(/NEXT:\s*(.+?)$/s)
   }
 }
