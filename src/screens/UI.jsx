@@ -225,25 +225,28 @@ export function DangerBtn({ children, style = {}, ...props }) {
 
 export function Section({ label, children, accent = false }) {
   return (
-    <div style={{ marginBottom: 28 }}>
+    <div style={{ marginBottom: 36, paddingBottom: 4 }}>
       <div style={{
         fontFamily: "'Barlow Condensed', sans-serif",
-        fontSize: 11,
-        fontWeight: 700,
+        fontSize: 12,
+        fontWeight: 800,
         letterSpacing: 3,
-        color: accent ? '#E8FF00' : '#555',
-        marginBottom: 10
+        color: accent ? '#E8FF00' : '#909090',
+        marginBottom: 12,
+        textTransform: 'uppercase'
       }}>
         {label}
       </div>
       <div style={{
         fontFamily: "'Courier Prime', monospace",
         fontSize: 16,
-        fontWeight: 700,
-        color: '#e8e8e8',
-        lineHeight: 1.75,
-        borderLeft: `2px solid ${accent ? '#E8FF00' : '#2a2a2a'}`,
-        paddingLeft: 14
+        fontWeight: 400,
+        color: '#efefef',
+        lineHeight: 1.8,
+        borderLeft: `3px solid ${accent ? '#E8FF00' : '#333'}`,
+        paddingLeft: 16,
+        paddingTop: 2,
+        paddingBottom: 2
       }}>
         {children}
       </div>
